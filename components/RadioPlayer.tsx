@@ -6,24 +6,44 @@ import { Station } from "@/lib/stations";
 import { useSpeech } from "@/lib/useSpeech";
 import WaveformAnimation from "@/components/WaveformAnimation";
 
+const SPEEDS = [
+  { label: "0.5x", value: 0.5 },
+  { label: "0.75x", value: 0.75 },
+  { label: "1x", value: 1.0 },
+  { label: "1.25x", value: 1.25 },
+  { label: "1.5x", value: 1.5 },
+];
+
 interface RadioPlayerProps {
   station: Station;
+  userInterests: string[];
 }
 
-export default function RadioPlayer({ station }: RadioPlayerProps) {
+export default function RadioPlayer({ station, userInterests }: RadioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [content, setContent] = useState("");
   const [currentTopic, setCurrentTopic] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [speechRate, setSpeechRate] = useState(1.0);
 
   const isPlayingRef = useRef(false);
   const isMutedRef = useRef(false);
+  const speechRateRef = useRef(1.0);
   const abortRef = useRef<AbortController | null>(null);
   const sessionRef = useRef(0);
   const contentScrollRef = useRef<HTMLDivElement>(null);
+  const userInterestsRef = useRef<string[]>([]);
 
   const { speak, stop, isSpeaking, isSupported } = useSpeech();
+
+  useEffect(() => {
+    speechRateRef.current = speechRate;
+  }, [speechRate]);
+
+  useEffect(() => {
+    userInterestsRef.current = userInterests;
+  }, [userInterests]);
 
   const pickTopic = useCallback(() => {
     const idx = Math.floor(Math.random() * station.topics.length);
@@ -50,13 +70,12 @@ export default function RadioPlayer({ station }: RadioPlayerProps) {
             stationName: station.name,
             topic,
             hostName: station.hostName,
+            userInterests: userInterestsRef.current,
           }),
           signal: controller.signal,
         });
 
-        if (!response.ok || !response.body) {
-          throw new Error("Generation failed");
-        }
+        if (!response.ok || !response.body) throw new Error("Generation failed");
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -93,7 +112,7 @@ export default function RadioPlayer({ station }: RadioPlayerProps) {
 
         if (text && !isMutedRef.current && isSupported) {
           await new Promise<void>((resolve) => {
-            speak(text, resolve);
+            speak(text, resolve, speechRateRef.current);
           });
         } else {
           await new Promise<void>((resolve) => setTimeout(resolve, 4000));
@@ -135,10 +154,16 @@ export default function RadioPlayer({ station }: RadioPlayerProps) {
     const next = !isMuted;
     isMutedRef.current = next;
     setIsMuted(next);
-    if (next) {
-      stop();
-    }
+    if (next) stop();
   }, [isMuted, stop]);
+
+  const handleSpeedChange = useCallback(
+    (value: number) => {
+      setSpeechRate(value);
+      speechRateRef.current = value;
+    },
+    []
+  );
 
   useEffect(() => {
     isPlayingRef.current = false;
@@ -153,8 +178,7 @@ export default function RadioPlayer({ station }: RadioPlayerProps) {
 
   useEffect(() => {
     if (contentScrollRef.current) {
-      contentScrollRef.current.scrollTop =
-        contentScrollRef.current.scrollHeight;
+      contentScrollRef.current.scrollTop = contentScrollRef.current.scrollHeight;
     }
   }, [content]);
 
@@ -171,9 +195,7 @@ export default function RadioPlayer({ station }: RadioPlayerProps) {
             {isPlaying ? "LIVE" : "OFF AIR"}
           </span>
         </div>
-        <span className="text-xs text-white/40 font-medium">
-          {station.nameEn}
-        </span>
+        <span className="text-xs text-white/40 font-medium">{station.nameEn}</span>
       </div>
 
       {/* Station visual */}
@@ -210,11 +232,11 @@ export default function RadioPlayer({ station }: RadioPlayerProps) {
       >
         {isGenerating && !content && (
           <p className="text-white/30 text-sm animate-pulse text-center mt-10">
-            {station.hostName}が準備中...
+            {station.hostName}が深掘り中...
           </p>
         )}
         {content && (
-          <p className="text-white/70 text-sm leading-relaxed whitespace-pre-wrap">
+          <p className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap">
             {content}
             {isGenerating && (
               <span className="inline-block w-1 h-4 bg-white/40 ml-0.5 animate-pulse align-middle" />
@@ -226,6 +248,27 @@ export default function RadioPlayer({ station }: RadioPlayerProps) {
             ▶ を押して放送を開始してください
           </p>
         )}
+      </div>
+
+      {/* Speed control */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-white/30 mr-1">速度</span>
+        {SPEEDS.map((s) => (
+          <button
+            key={s.value}
+            onClick={() => handleSpeedChange(s.value)}
+            className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+            style={{
+              background:
+                speechRate === s.value
+                  ? `linear-gradient(135deg, ${station.color}, ${station.color}cc)`
+                  : "rgba(255,255,255,0.08)",
+              color: speechRate === s.value ? "white" : "rgba(255,255,255,0.45)",
+            }}
+          >
+            {s.label}
+          </button>
+        ))}
       </div>
 
       {/* Controls */}
